@@ -218,12 +218,24 @@ app.use('/api/otp', otpRoutes);
 
 // Serve frontend static files
 // Assumes your React frontend build (`dist` folder) is in '../frontend/dist' relative to this backend
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-// Catch-all route to serve the frontend's index.html for any unmatched routes
+// ✅ Corrected Static Serving
+
+const distPath = path.join(__dirname, '../frontend/dist');
+
+// Serve static assets
+app.use(express.static(distPath));
+
+// Serve React app for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) {
+      res.status(500).send(err);
+    }
+  });
 });
+
+
 
 // Start the server (important: use `server.listen()`, not `app.listen()`)
 const PORT = process.env.PORT || 5000;

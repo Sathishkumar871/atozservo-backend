@@ -17,13 +17,13 @@ dotenv.config();
 
 // ✅ Create App
 const app = express();
-const server = http.createServer(app); // 🆕 Wrap express in HTTP server
+const server = http.createServer(app); 
 const { Server } = require('socket.io');
 
-// ✅ Setup Socket.IO
+
 const io = new Server(server, {
   cors: {
-    origin: "*", // In production, restrict to your frontend URL
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
@@ -50,7 +50,7 @@ app.use(cors());
 // ✅ API Routes
 app.use('/api/services', serviceRoutes);
 app.use('/api/otp', otpRoutes);
-app.use('/api/user', userRoutes); 
+app.use('/api/user', userRoutes);
 
 // ✅ Cloudinary Config
 cloudinary.config({
@@ -69,11 +69,15 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // ✅ Serve Frontend (Vite build output)
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+// This path is CORRECT because:
+// - __dirname is the current directory of this index.js (which is 'atozservo/server/')
+// - 'frontend', 'dist' will correctly lead to 'atozservo/server/frontend/dist'
+app.use(express.static(path.join(__dirname, 'frontend', 'dist'))); // <--- CORRECTED LINE
 
 // ✅ React Router fallback
+// This path is also CORRECT for the same reason
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
+  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html')); // <--- CORRECTED LINE
 });
 
 // ✅ Start Server using http.createServer (important for socket.io)
