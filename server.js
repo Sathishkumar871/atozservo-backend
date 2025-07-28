@@ -19,8 +19,10 @@ const server = http.createServer(app); // Create HTTP server from Express app
 // Configure CORS for Socket.IO and Express
 // IMPORTANT: Adjust 'origin' to your actual frontend URLs in production
 const allowedOrigins = [
-  "http://localhost:5173", // Frontend development URL (Vite default)
-  "https://atozservo.onrender.com" // Frontend production URL (if deployed on Render)
+   "http://localhost:5173",
+  "https://atozservo.onrender.com",  
+  "https://atozservo.xyz"             
+
 ];
 
 const io = new Server(server, {
@@ -221,19 +223,22 @@ app.use('/api/otp', otpRoutes);
 
 // ✅ Corrected Static Serving
 
-const distPath = path.join(__dirname, '../frontend/dist');
+const path = require('path');
 
-// Serve static assets
-app.use(express.static(distPath));
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.resolve(__dirname, '../frontend/dist');
 
-// Serve React app for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'), (err) => {
-    if (err) {
-      res.status(500).send(err);
-    }
+  app.use(express.static(distPath));
+
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'), (err) => {
+      if (err) {
+        res.status(500).send(err);
+      }
+    });
   });
-});
+}
+
 
 
 
