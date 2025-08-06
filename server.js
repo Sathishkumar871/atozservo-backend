@@ -24,7 +24,8 @@ const server = http.createServer(app);
 const allowedOrigins = [
   "https://www.atozservo.xyz",
   "https://atozservo.onrender.com",
-  "http://localhost:5173"
+  "https://atozservo-frontend-git-main-sathishs-projects-287a647c.vercel.app",
+    "http://localhost:5173"
 ];
 
 // Express app cors configuration
