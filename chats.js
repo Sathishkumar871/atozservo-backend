@@ -11,19 +11,29 @@ const { nanoid } = require('nanoid');
 const app = express();
 const server = http.createServer(app);
 
-// Use CORS to allow connections from your frontend
 app.use(cors({
-    origin: "http://localhost:5173", // Change this to your frontend's URL
-    methods: ["GET", "POST"]
+    origin: [
+        "http://localhost:5173",            
+        "https://atozservo.xyz",             
+        "https://www.atozservo.xyz"          
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
 }));
 
-// Set up Socket.IO server
+// Socket.IO CORS
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173", // Change this to your frontend's URL
-        methods: ["GET", "POST"]
+        origin: [
+            "http://localhost:5173",
+            "https://atozservo.xyz",
+            "https://www.atozservo.xyz"
+        ],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
+
 
 // --- Server-side data structures ---
 // To store all active groups and their members

@@ -46,4 +46,4 @@ server.listen(PORT, () => {
   console.log(`🚀 Socket.IO Server running at http://localhost:${PORT}`);
 });
 
-module.exports = server; // Export if you want to use this in other files
+module.exports = server;

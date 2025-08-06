@@ -8,10 +8,7 @@ require('dotenv').config();
 // OTP generator (4-digit)
 const generateOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
 
-/**
- * POST /send-otp
- * Send OTP to user's email
- */
+
 router.post('/send-otp', async (req, res) => {
   try {
     const { email } = req.body;

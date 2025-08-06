@@ -20,7 +20,7 @@ const User = require('./models/User');
 const app = express();
 const server = http.createServer(app);
 
-// ✅ ఇక్కడ allowedOrigins arrayని సరిచేశాను
+
 const allowedOrigins = [
   "https://www.atozservo.xyz",
   "https://atozservo.onrender.com",
