@@ -1,14 +1,12 @@
 const express = require("express");
-const router = express.Router();
-const { MongoClient } = require("mongodb");
 const jwt = require("jsonwebtoken");
-require("dotenv").config();
+const { MongoClient } = require("mongodb");
 
+const router = express.Router();
 const MONGODB_URI = process.env.MONGODB_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
-const DB_NAME = "atozservo";
 
-// ✅ Middleware to verify token and attach user
+// 🔐 Token Authentication Middleware
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -18,37 +16,38 @@ function authenticate(req, res, next) {
   const token = authHeader.split(" ")[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Inject decoded user data (e.g., { email })
+    req.user = decoded; // Attach user info (like email) from token
     next();
   } catch (err) {
     return res.status(401).json({ message: "Unauthorized: Invalid token" });
   }
 }
 
-// 🔗 Connect to MongoDB
-async function connectDB() {
-  const client = await MongoClient.connect(MONGODB_URI);
-  return { client, db: client.db(DB_NAME) };
+// 🧩 Connect to MongoDB
+async function connectToDb() {
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  return client.db(); // returns the DB object
 }
 
-// 📝 1️⃣ Update User Profile API (with auth)
+// 📝 POST /api/user/update-profile
 router.post("/update-profile", authenticate, async (req, res) => {
   const { name, phone, address, profileImage } = req.body;
-  const email = req.user.email; // ✅ get from token instead of body
+  const email = req.user.email;
 
   if (!email) {
     return res.status(400).json({ message: "Email is required" });
   }
 
-  try {
-    const { client, db } = await connectDB();
+  const updateFields = {};
+  if (name) updateFields.name = name;
+  if (phone) updateFields.phone = phone;
+  if (address) updateFields.address = address;
+  if (profileImage) updateFields.profileImage = profileImage;
+  updateFields.profileCompleted = true;
 
-    const updateFields = {};
-    if (name) updateFields.name = name;
-    if (phone) updateFields.phone = phone;
-    if (address) updateFields.address = address;
-    if (profileImage) updateFields.profileImage = profileImage;
-    updateFields.profileCompleted = true;
+  try {
+    const db = await connectToDb();
 
     await db.collection("users").updateOne(
       { email },
@@ -56,11 +55,10 @@ router.post("/update-profile", authenticate, async (req, res) => {
       { upsert: true }
     );
 
-    client.close();
-    res.status(200).json({ message: "✅ Profile updated successfully" });
-  } catch (err) {
-    console.error("❌ Error updating profile:", err);
-    res.status(500).json({ message: "Failed to update profile" });
+    res.status(200).json({ message: "Profile updated successfully" });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 

@@ -1,119 +1,132 @@
 const express = require("express");
 const router = express.Router();
-const { MongoClient } = require("mongodb");
+const authMiddleware = require("../middleware/auth");
+const User = require("../models/User");
+const multer = require("multer"); 
+const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
 
-const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = "atozservo"; // replace with your DB name
+// Multer setup for in-memory storage.
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-// 🔗 Helper function to connect DB
-async function connectDB() {
-  const client = await MongoClient.connect(MONGODB_URI);
-  return { client, db: client.db(DB_NAME) };
-}
-
-//
-// 1️⃣ Store Device API – after OTP verify
-//
-router.post("/store-device", async (req, res) => {
-  const { email, deviceId } = req.body;
-  if (!email || !deviceId) {
-    return res.status(400).json({ message: "Missing email or deviceId" });
-  }
-
-  try {
-    const { client, db } = await connectDB();
-    await db.collection("devices").updateOne(
-      { deviceId },
-      { $set: { email, deviceId } },
-      { upsert: true }
-    );
-    client.close();
-    res.status(200).json({ message: "✅ Device stored successfully" });
-  } catch (err) {
-    res.status(500).json({ message: "❌ Error storing device" });
-  }
-});
-
-//
-// 2️⃣ Auto Login API – app open lo check cheyyadam
-//
-router.post("/auto-login", async (req, res) => {
-  const { deviceId } = req.body;
-  if (!deviceId) {
-    return res.status(400).json({ message: "Missing deviceId" });
-  }
-
-  try {
-    const { client, db } = await connectDB();
-    const record = await db.collection("devices").findOne({ deviceId });
-    client.close();
-
-    if (record?.email) {
-      res.status(200).json({ user: { email: record.email, profileCompleted: false } });
-    } else {
-      res.status(404).json({ message: "Device not found" });
+/**
+ * 🔄 GET /api/user/me
+ * Fetches the user's data using the JWT token
+ */
+router.get("/me", authMiddleware, async (req, res) => {
+    try {
+        // req.user.id authMiddleware nundi vastundi
+        const user = await User.findById(req.user.id).select('-otp -otpExpiry');
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        res.status(200).json({ user });
+    } catch (err) {
+        console.error("❌ Fetch user error:", err);
+        res.status(500).json({ message: "Server error" });
     }
-  } catch (err) {
-    res.status(500).json({ message: "❌ Error during auto login" });
-  }
 });
 
-//
-// 3️⃣ Remove Device API – logout click lo cleanup
-//
-router.post("/remove-device", async (req, res) => {
-  const { deviceId } = req.body;
-  if (!deviceId) {
-    return res.status(400).json({ message: "Missing deviceId" });
-  }
 
-  try {
-    const { client, db } = await connectDB();
-    await db.collection("devices").deleteOne({ deviceId });
-    client.close();
-    res.status(200).json({ message: "🚪 Device removed successfully" });
-  } catch (err) {
-    res.status(500).json({ message: "❌ Error removing device" });
-  }
+/**
+ * ✅ POST /api/user/upload-image
+ * Uploads a profile image to Cloudinary and saves the URL to the user's profile
+ */
+router.post("/upload-image", authMiddleware, upload.single("profileImage"), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: "No image file provided" });
+        }
+
+        const email = req.user.email;
+        let cld_upload_stream = cloudinary.uploader.upload_stream(
+            { folder: "profile-images" },
+            async function (error, result) {
+                if (error) {
+                    console.error("Cloudinary upload error:", error);
+                    return res.status(500).json({ message: "Image upload failed" });
+                }
+
+                const updatedUser = await User.findOneAndUpdate(
+                    { email },
+                    { $set: { profileImage: result.secure_url } },
+                    { new: true }
+                );
+
+                if (!updatedUser) {
+                    return res.status(404).json({ message: "User not found" });
+                }
+
+                res.status(200).json({
+                    message: "✅ Profile image updated successfully",
+                    imageUrl: result.secure_url
+                });
+            }
+        );
+
+        streamifier.createReadStream(req.file.buffer).pipe(cld_upload_stream);
+
+    } catch (err) {
+        console.error("❌ Image upload route error:", err);
+        res.status(500).json({ message: "Server error" });
+    }
 });
 
-//
-// 4️⃣ ✅ Update Profile API (FINAL REQUIRED ONE)
-//
-router.post("/update-profile", async (req, res) => {
-  const { email, name, phone, pincode, village, house, area, addressType, gender } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ message: "Email is required" });
-  }
+/**
+ * ✅ POST /api/user/update-profile
+ * Updates other profile details
+ */
+router.post("/update-profile", authMiddleware, async (req, res) => {
+    const { email } = req.user;
 
-  try {
-    const { client, db } = await connectDB();
-
-    const updateFields = {
+    const {
       name,
       phone,
       pincode,
       village,
       house,
       area,
+      district,
       addressType,
-      gender,
+      gender
+    } = req.body;
+
+    if (!email) {
+      return res.status(401).json({ message: "Unauthorized: Email missing" });
+    }
+
+    const updateFields = {
+      ...(name && { name }),
+      ...(phone && { phone }),
+      ...(pincode && { pincode }),
+      ...(village && { village }),
+      ...(house && { house }),
+      ...(area && { area }),
+      ...(district && { district }),
+      ...(addressType && { addressType }),
+      ...(gender && { gender }),
       profileCompleted: true
     };
 
-    await db.collection("users").updateOne(
-      { email },
-      { $set: updateFields },
-      { upsert: true }
-    );
+    try {
+      const updated = await User.findOneAndUpdate(
+        { email },
+        { $set: updateFields },
+        { new: true }
+      );
 
-    client.close();
-    res.status(200).json({ message: "✅ Profile updated successfully" });
-  } catch (err) {
-    console.error("❌ Profile update error:", err);
-    res.status(500).json({ message: "❌ Failed to update profile" });
-  }
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.status(200).json({ message: "✅ Profile updated successfully" });
+    } catch (err) {
+      console.error("❌ Profile update error:", err);
+      return res.status(500).json({ message: "❌ Failed to update profile" });
+    }
 });
+
 
 module.exports = router;

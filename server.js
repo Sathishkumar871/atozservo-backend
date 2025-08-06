@@ -1,30 +1,40 @@
 // chat-backend/server.js
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const path = require('path');
-const dotenv = require('dotenv');
-const cloudinary = require('cloudinary').v2;
-const http = require('http');
-const { Server } = require('socket.io');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
+const path = require("path");
+const dotenv = require("dotenv");
+const cloudinary = require("cloudinary").v2;
+const mongoose = require("mongoose"); 
+const jwt = require("jsonwebtoken");
+const ytdl = require("ytdl-core");
 
-dotenv.config(); // Load environment variables from .env file
-
-const servicesRoutes = require('./routes/servicesRoutes'); // Your existing API routes
-const otpRoutes = require('./routes/otpRoutes'); // Your existing API routes
+dotenv.config();
+const servicesRoutes = require('./routes/servicesRoutes');
+const otpRoutes = require('./routes/otpRoutes');
+const userRoutes = require('./routes/userRoutes');
+const MatchLog = require('./models/MatchLog');
+const User = require('./models/User');
 
 const app = express();
-const server = http.createServer(app); // Create HTTP server from Express app
+const server = http.createServer(app);
 
-// Configure CORS for Socket.IO and Express
-// IMPORTANT: Adjust 'origin' to your actual frontend URLs in production
+// ✅ ఇక్కడ allowedOrigins arrayని సరిచేశాను
 const allowedOrigins = [
-   "http://localhost:5173",
-  "https://atozservo.onrender.com",  
-  "https://atozservo.xyz"             
-
+  "https://www.atozservo.xyz",
+  "https://atozservo.onrender.com",
+  "http://localhost:5173"
 ];
 
+// Express app cors configuration
+app.use(express.json());
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+// Socket.IO server cors configuration
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -33,217 +43,203 @@ const io = new Server(server, {
   }
 });
 
-app.use(express.json()); // Middleware to parse JSON request bodies
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
-
-// Cloudinary configuration
 cloudinary.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ MongoDB Connected'))
-  .catch(err => console.error('❌ MongoDB Error:', err.message));
+  .then(() => console.log('✅ MongoDB Connected'))
+  .catch(err => console.error('❌ MongoDB Error:', err.message));
 
-// --- Socket.IO Matching & Signaling Logic ---
-const waitingChatUsers = []; // Sockets waiting for a chat partner
-const waitingCallUsers = []; // Sockets waiting for a call partner
-const activeCallRooms = new Map(); // Map to store active call rooms and their participants (roomId -> [socketId1, socketId2])
+const waitingChatUsers = [];
+const waitingCallUsers = [];
+const activeCallRooms = new Map();
 
-// Helper to generate a unique room ID
 const generateUniqueRoomId = () => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return Math.random().toString(36).substring(2, 15) +
+         Math.random().toString(36).substring(2, 15);
 };
 
-io.on("connection", (socket) => {
-  console.log("🟢 Socket connected:", socket.id);
-
-  // --- Chat Specific Events ---
-  // Client requests to join a specific chat room
-  socket.on("join_chat_room", (roomId) => {
-    socket.join(roomId);
-    console.log(`${socket.id} joined chat room: ${roomId}`);
-  });
-
-  // Handle incoming messages for a specific chat room
-  socket.on("send_room_message", ({ roomId, message }) => {
-    console.log(`📨 Message for chat room ${roomId} from ${socket.id}:`, message);
-    // Emit message to all clients in the specific room (including sender)
-    io.to(roomId).emit("message", message);
-  });
-
-  // Client leaves a specific chat room
-  socket.on("leave_chat_room", (roomId) => {
-    socket.leave(roomId);
-    console.log(`${socket.id} left chat room: ${roomId}`);
-  });
-
-  // Handle request to find a chat partner
-  socket.on("find_chat_partner", () => {
-    console.log(`${socket.id} is looking for a chat partner.`);
-    if (waitingChatUsers.length > 0) {
-      const partnerSocketId = waitingChatUsers.shift(); // Get the first waiting user
-      const partnerSocket = io.sockets.sockets.get(partnerSocketId);
-
-      if (partnerSocket && partnerSocket.connected) { // Ensure partner is still connected
-        const roomId = generateUniqueRoomId();
-        socket.join(roomId); // Current socket joins the room
-        partnerSocket.join(roomId); // Partner socket joins the room
-
-        console.log(`✨ Chat match found! Room: ${roomId}, Users: ${socket.id}, ${partnerSocketId}`);
-
-        // Notify both users that a chat partner is found
-        socket.emit('chat_partner_found', { roomId: roomId, partnerId: partnerSocketId });
-        partnerSocket.emit('chat_partner_found', { roomId: roomId, partnerId: socket.id });
-      } else {
-        // Partner disconnected, add current user back to queue
-        waitingChatUsers.push(socket.id); // Add current user back if partner is gone
-      }
-    } else {
-      waitingChatUsers.push(socket.id); // No partner, add to waiting list
-      socket.emit('searching', { type: 'chat' }); // Notify client they are searching
-    }
-  });
-
-  // --- Call Specific Events (WebRTC Signaling) ---
-
-  // Handle request to find a call partner
-  socket.on("find_call_partner", () => {
-    console.log(`${socket.id} is looking for a call partner.`);
-    if (waitingCallUsers.length > 0) {
-      const partnerSocketId = waitingCallUsers.shift();
-      const partnerSocket = io.sockets.sockets.get(partnerSocketId);
-
-      if (partnerSocket && partnerSocket.connected) {
-        const roomId = generateUniqueRoomId();
-        socket.join(roomId);
-        partnerSocket.join(roomId);
-
-        activeCallRooms.set(roomId, [socket.id, partnerSocketId]); // Track participants in the call room
-
-        console.log(`📞 Call match found! Room: ${roomId}, Users: ${socket.id}, ${partnerSocketId}`);
-
-        // Notify both users that a call partner is found
-        socket.emit('call_partner_found', { roomId: roomId, partnerId: partnerSocketId });
-        partnerSocket.emit('call_partner_found', { roomId: roomId, partnerId: socket.id });
-      } else {
-        waitingCallUsers.push(socket.id); // Add current user back if partner is gone
-      }
-    } else {
-      waitingCallUsers.push(socket.id);
-      socket.emit('searching', { type: 'call' }); // Notify client they are searching
-    }
-  });
-
-  // Client requests to join a specific video call room
-  socket.on("join-video-call-room", (roomId) => {
-    socket.join(roomId);
-    console.log(`${socket.id} joined video call room: ${roomId}`);
-    // Notify the other peer in the room that a new peer has joined
-    // This helps in initiating WebRTC negotiation
-    socket.to(roomId).emit('peer-joined-call', socket.id);
-  });
-
-  // Client sends an SDP offer
-  socket.on("offer", ({ roomId, offer }) => {
-    console.log(`Offer from ${socket.id} for room ${roomId}`);
-    // Forward the offer to the other peer in the same room
-    socket.to(roomId).emit("offer", offer);
-  });
-
-  // Client sends an SDP answer
-  socket.on("answer", ({ roomId, answer }) => {
-    console.log(`Answer from ${socket.id} for room ${roomId}`);
-    // Forward the answer to the other peer in the same room
-    socket.to(roomId).emit("answer", answer);
-  });
-
-  // Client sends an ICE candidate
-  socket.on("ice-candidate", ({ roomId, candidate }) => {
-    console.log(`ICE candidate from ${socket.id} for room ${roomId}`);
-    // Forward the ICE candidate to the other peer in the same room
-    socket.to(roomId).emit("ice-candidate", candidate);
-  });
-
-  // Client ends a call explicitly
-  socket.on("end-call", (roomId) => {
-    console.log(`${socket.id} is ending call in room ${roomId}`);
-    // Notify the other peer in the room that the call has ended
-    socket.to(roomId).emit("call-ended");
-    // Make all sockets in this room leave it
-    io.sockets.in(roomId).socketsLeave(roomId);
-    activeCallRooms.delete(roomId); // Remove room from active tracking
-  });
-
-  // --- Disconnect Handling ---
-  socket.on("disconnect", () => {
-    console.log("🔴 Socket disconnected:", socket.id);
-
-    // Remove disconnected socket from any waiting queues
-    const chatIndex = waitingChatUsers.indexOf(socket.id);
-    if (chatIndex > -1) {
-      waitingChatUsers.splice(chatIndex, 1);
-      console.log(`Removed ${socket.id} from chat waiting list.`);
-    }
-    const callIndex = waitingCallUsers.indexOf(socket.id);
-    if (callIndex > -1) {
-      waitingCallUsers.splice(callIndex, 1);
-      console.log(`Removed ${socket.id} from call waiting list.`);
-    }
-
-    // If a user disconnects from an active call, notify the other participant
-    activeCallRooms.forEach((participants, roomId) => {
-      if (participants.includes(socket.id)) {
-        const otherParticipantId = participants.find(id => id !== socket.id);
-        if (otherParticipantId) {
-          // Notify the remaining participant that their peer disconnected
-          io.to(otherParticipantId).emit("call-ended-by-disconnect", roomId);
-          // Make all sockets in this room leave it (including the remaining one)
-          io.sockets.in(roomId).socketsLeave(roomId);
-          activeCallRooms.delete(roomId); // Remove room from active tracking
-          console.log(`Call in room ${roomId} ended due to ${socket.id} disconnect.`);
-        }
-      }
-    });
-  });
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (token) {
+    try {
+      const user = jwt.verify(token, process.env.JWT_SECRET);
+      socket.user = user;
+    } catch (err) {
+      socket.user = { anonymous: true };
+    }
+  } else {
+    socket.user = { anonymous: true };
+  }
+  next();
 });
 
-// API routes
+io.on("connection", (socket) => {
+  console.log("🟢 Socket connected:", socket.id);
+
+  socket.on("join_chat_room", (roomId) => {
+    socket.join(roomId);
+  });
+
+  socket.on("send_room_message", ({ roomId, message }) => {
+    io.to(roomId).emit("message", message);
+  });
+
+  socket.on("leave_chat_room", (roomId) => {
+    socket.leave(roomId);
+  });
+
+  socket.on("find_chat_partner", async () => {
+    if (waitingChatUsers.length > 0) {
+      const partnerSocketId = waitingChatUsers.shift();
+      const partnerSocket = io.sockets.sockets.get(partnerSocketId);
+
+      if (partnerSocket?.connected) {
+        const roomId = generateUniqueRoomId();
+        socket.join(roomId);
+        partnerSocket.join(roomId);
+
+        await MatchLog.create({
+          user1: socket.user?.id || 'anonymous',
+          user2: partnerSocket.user?.id || 'anonymous',
+          matchedAt: new Date()
+        });
+
+        const currentUser = await User.findById(partnerSocket.user?.id || "");
+        const partnerUser = await User.findById(socket.user?.id || "");
+
+        socket.emit('chat_partner_found', {
+          roomId,
+          partnerId: partnerSocket.id,
+          partner: {
+            name: currentUser?.name || "Anonymous",
+            avatar: currentUser?.avatarUrl || null
+          }
+        });
+
+        partnerSocket.emit('chat_partner_found', {
+          roomId,
+          partnerId: socket.id,
+          partner: {
+            name: partnerUser?.name || "Anonymous",
+            avatar: partnerUser?.avatarUrl || null
+          }
+        });
+      } else {
+        waitingChatUsers.push(socket.id);
+      }
+    } else {
+      waitingChatUsers.push(socket.id);
+      socket.emit('searching', { type: 'chat' });
+    }
+  });
+
+  socket.on("find_call_partner", () => {
+    if (waitingCallUsers.length > 0) {
+      const partnerSocketId = waitingCallUsers.shift();
+      const partnerSocket = io.sockets.sockets.get(partnerSocketId);
+
+      if (partnerSocket?.connected) {
+        const roomId = generateUniqueRoomId();
+        socket.join(roomId);
+        partnerSocket.join(roomId);
+
+        activeCallRooms.set(roomId, [socket.id, partnerSocketId]);
+
+        socket.emit('call_partner_found', { roomId, partnerId: partnerSocketId });
+        partnerSocket.emit('call_partner_found', { roomId, partnerId: socket.id });
+      } else {
+        waitingCallUsers.push(socket.id);
+      }
+    } else {
+      waitingCallUsers.push(socket.id);
+      socket.emit('searching', { type: 'call' });
+    }
+  });
+
+  socket.on("join-video-call-room", (roomId) => {
+    socket.join(roomId);
+    socket.to(roomId).emit('peer-joined-call', socket.id);
+  });
+
+  socket.on("offer", ({ roomId, offer }) => {
+    socket.to(roomId).emit("offer", offer);
+  });
+
+  socket.on("answer", ({ roomId, answer }) => {
+    socket.to(roomId).emit("answer", answer);
+  });
+
+  socket.on("ice-candidate", ({ roomId, candidate }) => {
+    socket.to(roomId).emit("ice-candidate", candidate);
+  });
+
+  socket.on("end-call", (roomId) => {
+    socket.to(roomId).emit("call-ended");
+    io.sockets.in(roomId).socketsLeave(roomId);
+    activeCallRooms.delete(roomId);
+  });
+
+  socket.on("disconnect", () => {
+    const chatIndex = waitingChatUsers.indexOf(socket.id);
+    if (chatIndex > -1) waitingChatUsers.splice(chatIndex, 1);
+
+    const callIndex = waitingCallUsers.indexOf(socket.id);
+    if (callIndex > -1) waitingCallUsers.splice(callIndex, 1);
+
+    activeCallRooms.forEach((participants, roomId) => {
+      if (participants.includes(socket.id)) {
+        const otherId = participants.find(id => id !== socket.id);
+        if (otherId) {
+          io.to(otherId).emit("call-ended-by-disconnect", roomId);
+          io.sockets.in(roomId).socketsLeave(roomId);
+          activeCallRooms.delete(roomId);
+        }
+      }
+    });
+  });
+});
+
+// Stream YouTube video without download
+app.get('/api/stream', async (req, res) => {
+  const videoURL = req.query.url;
+  if (!videoURL) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  try {
+    const info = await ytdl.getInfo(videoURL);
+    const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+    if (!format) {
+      return res.status(404).json({ error: 'No suitable format found' });
+    }
+
+    res.setHeader('Content-Type', 'video/mp4');
+    ytdl(videoURL, { format }).pipe(res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to stream video' });
+  }
+});
+
 app.use('/api/services', servicesRoutes);
 app.use('/api/otp', otpRoutes);
-
-// Serve frontend static files
-// Assumes your React frontend build (`dist` folder) is in '../frontend/dist' relative to this backend
-
-// ✅ Corrected Static Serving
-
-const path = require('path');
+app.use('/api/user', userRoutes);
 
 if (process.env.NODE_ENV === 'production') {
-  const distPath = path.resolve(__dirname, '../frontend/dist');
-
-  app.use(express.static(distPath));
-
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'), (err) => {
-      if (err) {
-        res.status(500).send(err);
-      }
-    });
-  });
+  const distPath = path.resolve(__dirname, '../frontend/dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'), err => {
+      if (err) res.status(500).send(err);
+    });
+  });
 }
 
-
-
-
-// Start the server (important: use `server.listen()`, not `app.listen()`)
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`\u{1F680} Server running on port ${PORT}`);
 });

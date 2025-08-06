@@ -8,7 +8,7 @@ const cors = require('cors');
 const http = require('http'); // 🆕 Required for socket.io
 
 // ✅ Import Routes
-const serviceRoutes = require('./routes/ServiceRoutes');
+const serviceRoutes = require('./routes/servicesRoutes');
 const otpRoutes = require('./routes/otpRoutes');
 const userRoutes = require('./routes/user');
 
@@ -68,19 +68,15 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Connected'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// ✅ Serve Frontend (Vite build output)
-// This path is CORRECT because:
-// - __dirname is the current directory of this index.js (which is 'atozservo/server/')
-// - 'frontend', 'dist' will correctly lead to 'atozservo/server/frontend/dist'
-app.use(express.static(path.join(__dirname, 'frontend', 'dist'))); // <--- CORRECTED LINE
 
-// ✅ React Router fallback
-// This path is also CORRECT for the same reason
+app.use(express.static(path.join(__dirname, 'frontend', 'dist'))); 
+
+
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html')); // <--- CORRECTED LINE
+  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html')); 
 });
 
-// ✅ Start Server using http.createServer (important for socket.io)
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server + WebSocket running on port ${PORT}`);

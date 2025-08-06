@@ -40,7 +40,7 @@ router.post('/send-otp', async (req, res) => {
 
 /**
  * POST /verify-otp
- * Verify OTP and issue JWT
+ * Verify OTP and issue JWT + return user details
  */
 router.post('/verify-otp', async (req, res) => {
   try {
@@ -48,17 +48,34 @@ router.post('/verify-otp', async (req, res) => {
     if (!email || !otp) return res.status(400).json({ message: 'Email and OTP are required' });
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid email or OTP' }); // Generic message
-
-    if (user.otp !== otp) return res.status(400).json({ message: 'Invalid email or OTP' }); // Generic message
+    if (!user) return res.status(400).json({ message: 'Invalid email or OTP' });
+    if (user.otp !== otp) return res.status(400).json({ message: 'Invalid email or OTP' });
     if (Date.now() > user.otpExpiry) return res.status(400).json({ message: 'OTP expired' });
 
+    // Clear OTP after verification
     user.otp = null;
     user.otpExpiry = null;
     await user.save();
 
     const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ message: 'OTP verified', token });
+
+    res.json({
+      message: 'OTP verified',
+      token,
+      user: {
+        _id: user._id,
+        email: user.email,
+        name: user.name || '',
+        phone: user.phone || '',
+        pincode: user.pincode || '',
+        village: user.village || '',
+        house: user.house || '',
+        area: user.area || '',
+        addressType: user.addressType || '',
+        gender: user.gender || '',
+        profileCompleted: user.profileCompleted || false,
+      }
+    });
   } catch (err) {
     console.error('Verify OTP error:', err);
     res.status(500).json({ message: 'Server error' });
@@ -96,12 +113,18 @@ router.post('/get-user', async (req, res) => {
 
     res.json({
       user: {
+        _id: user._id,
         email: user.email,
         name: user.name || '',
         phone: user.phone || '',
-        address: user.address || {},
+        pincode: user.pincode || '',
+        village: user.village || '',
+        house: user.house || '',
+        area: user.area || '',
+        addressType: user.addressType || '',
+        gender: user.gender || '',
         profileCompleted: user.profileCompleted || false,
-      },
+      }
     });
   } catch (err) {
     console.error('Get user error:', err);
