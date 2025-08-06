@@ -15,7 +15,7 @@ app.use(cors({
     origin: [
         "http://localhost:5173",            
         "https://atozservo.xyz",             
-        "https://www.atozservo.xyz"          
+        "https://atozservo-backend.onrender.com"          
     ],
     methods: ["GET", "POST"],
     credentials: true
@@ -27,7 +27,8 @@ const io = new Server(server, {
         origin: [
             "http://localhost:5173",
             "https://atozservo.xyz",
-            "https://www.atozservo.xyz"
+            "https://atozservo-backend.onrender.com"
+
         ],
         methods: ["GET", "POST"],
         credentials: true

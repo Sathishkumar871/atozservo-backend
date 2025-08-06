@@ -5,17 +5,11 @@ const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
 const path = require('path');
 const cors = require('cors');
-const http = require('http'); // 🆕 Required for socket.io
-
-// ✅ Import Routes
+const http = require('http');
 const serviceRoutes = require('./routes/servicesRoutes');
 const otpRoutes = require('./routes/otpRoutes');
 const userRoutes = require('./routes/user');
-
-// ✅ Load .env
 dotenv.config();
-
-// ✅ Create App
 const app = express();
 const server = http.createServer(app); 
 const { Server } = require('socket.io');

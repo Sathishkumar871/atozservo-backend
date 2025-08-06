@@ -23,12 +23,12 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   "https://www.atozservo.xyz",
-  "https://atozservo.onrender.com",
-  "https://atozservo-frontend-git-main-sathishs-projects-287a647c.vercel.app",
+   "https://atozservo-frontend-git-main-sathishs-projects-287a647c.vercel.app",
+  "https://atozservo-backend.onrender.com",
     "http://localhost:5173"
 ];
 
-// Express app cors configuration
+
 app.use(express.json());
 app.use(cors({
   origin: allowedOrigins,
@@ -38,7 +38,7 @@ app.use(cors({
 // Socket.IO server cors configuration
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: ["http://localhost:5173", "https://atozservo.vercel.app"],
     methods: ["GET", "POST"],
     credentials: true
   }
