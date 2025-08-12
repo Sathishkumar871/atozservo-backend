@@ -35,10 +35,7 @@ router.post('/send-otp', async (req, res) => {
   }
 });
 
-/**
- * POST /verify-otp
- * Verify OTP and issue JWT + return user details
- */
+
 router.post('/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
