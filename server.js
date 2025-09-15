@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -9,8 +10,10 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const ytdl = require("ytdl-core");
 
+// Load env variables
 dotenv.config();
 
+// Routes & Models
 const servicesRoutes = require('./routes/servicesRoutes');
 const otpRoutes = require('./routes/otpRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -20,29 +23,27 @@ const User = require('./models/User');
 const app = express();
 const server = http.createServer(app);
 
+// Allowed origins for CORS
 const allowedOrigins = [
+  "http://localhost:5173",
   "https://www.atozservo.xyz",
   "https://atozservo-frontend-git-main-sathishs-projects-287a647c.vercel.app",
-  "https://atozservo-backend.onrender.com",
-  "http://localhost:5173"
+  "https://atozservo-backend.onrender.com"
 ];
 
-// ✅ Express CORS (API)
+// ✅ Express CORS
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // Allow non-browser requests
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    } else {
-      return callback(new Error("CORS not allowed for this origin"), false);
-    }
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) callback(null, true);
+    else callback(new Error("CORS not allowed for this origin"), false);
   },
   credentials: true
 }));
 
 app.use(express.json());
 
-// ✅ Socket.IO CORS
+// ✅ Socket.IO setup with CORS
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -51,19 +52,19 @@ const io = new Server(server, {
   }
 });
 
-// ✅ Cloudinary Config
+// ✅ Cloudinary config
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ MongoDB Connect
+// ✅ MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Connected'))
   .catch(err => console.error('❌ MongoDB Error:', err.message));
 
-// ======== Matchmaking Data =========
+// ======= Matchmaking Data =======
 const waitingChatUsers = [];
 const waitingCallUsers = [];
 const waitingAudioUsers = [];
@@ -73,7 +74,7 @@ const generateUniqueRoomId = () =>
   Math.random().toString(36).substring(2, 15) +
   Math.random().toString(36).substring(2, 15);
 
-// ✅ Socket Auth Middleware
+// ✅ Socket JWT middleware
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (token) {
@@ -88,16 +89,15 @@ io.use((socket, next) => {
   next();
 });
 
-// ✅ Socket Connection Events
+// ✅ Socket connection
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
 
-  // Chat Partner Matching
+  // --- Chat matching ---
   socket.on("find_chat_partner", async () => {
     if (waitingChatUsers.length > 0) {
       const partnerSocketId = waitingChatUsers.shift();
       const partnerSocket = io.sockets.sockets.get(partnerSocketId);
-
       if (partnerSocket?.connected) {
         const roomId = generateUniqueRoomId();
         socket.join(roomId);
@@ -129,21 +129,18 @@ io.on("connection", (socket) => {
             avatar: partnerUser?.avatarUrl || null
           }
         });
-      } else {
-        waitingChatUsers.push(socket.id);
-      }
+      } else waitingChatUsers.push(socket.id);
     } else {
       waitingChatUsers.push(socket.id);
       socket.emit('searching', { type: 'chat' });
     }
   });
 
-  // Video Call Partner Matching
+  // --- Call matching ---
   socket.on("find_call_partner", () => {
     if (waitingCallUsers.length > 0) {
       const partnerSocketId = waitingCallUsers.shift();
       const partnerSocket = io.sockets.sockets.get(partnerSocketId);
-
       if (partnerSocket?.connected) {
         const roomId = generateUniqueRoomId();
         socket.join(roomId);
@@ -153,46 +150,37 @@ io.on("connection", (socket) => {
 
         socket.emit('call_partner_found', { roomId, partnerId: partnerSocketId });
         partnerSocket.emit('call_partner_found', { roomId, partnerId: socket.id });
-      } else {
-        waitingCallUsers.push(socket.id);
-      }
+      } else waitingCallUsers.push(socket.id);
     } else {
       waitingCallUsers.push(socket.id);
       socket.emit('searching', { type: 'call' });
     }
   });
 
-  // Audio Partner Matching
+  // --- Audio matching ---
   socket.on('find_partner', (user) => {
     if (waitingAudioUsers.length > 0) {
       const partnerSocketId = waitingAudioUsers.shift();
       if (io.sockets.sockets.has(partnerSocketId)) {
-        io.to(socket.id).emit('partner_found', { 
-          id: partnerSocketId, 
-          name: 'Partner', 
-          avatar: 'https://ui-avatars.com/api/?name=Partner', 
-          audioOnly: true 
+        io.to(socket.id).emit('partner_found', {
+          id: partnerSocketId,
+          name: 'Partner',
+          avatar: 'https://ui-avatars.com/api/?name=Partner',
+          audioOnly: true
         });
-        io.to(partnerSocketId).emit('partner_found', { 
-          id: socket.id, 
-          name: user.name, 
-          avatar: user.avatar, 
-          audioOnly: true 
+        io.to(partnerSocketId).emit('partner_found', {
+          id: socket.id,
+          name: user.name,
+          avatar: user.avatar,
+          audioOnly: true
         });
-      } else {
-        waitingAudioUsers.push(socket.id);
-      }
-    } else {
-      waitingAudioUsers.push(socket.id);
-    }
+      } else waitingAudioUsers.push(socket.id);
+    } else waitingAudioUsers.push(socket.id);
   });
 
-  // WebRTC Signaling
+  // --- WebRTC signaling ---
   socket.on('signal', (data) => {
-    io.to(data.to).emit('signal_from_peer', {
-      signal: data.signal,
-      from: data.from,
-    });
+    io.to(data.to).emit('signal_from_peer', { signal: data.signal, from: data.from });
   });
 
   socket.on("join-video-call-room", (roomId) => {
@@ -218,6 +206,7 @@ io.on("connection", (socket) => {
     activeCallRooms.delete(roomId);
   });
 
+  // --- Cancel search ---
   socket.on("cancel_search", () => {
     [waitingChatUsers, waitingCallUsers, waitingAudioUsers].forEach(list => {
       const index = list.indexOf(socket.id);
@@ -225,11 +214,13 @@ io.on("connection", (socket) => {
     });
   });
 
+  // --- Disconnect ---
   socket.on("disconnect", () => {
     [waitingChatUsers, waitingCallUsers, waitingAudioUsers].forEach(list => {
       const index = list.indexOf(socket.id);
       if (index > -1) list.splice(index, 1);
     });
+
     activeCallRooms.forEach((participants, roomId) => {
       if (participants.includes(socket.id)) {
         const otherId = participants.find(id => id !== socket.id);
@@ -240,23 +231,20 @@ io.on("connection", (socket) => {
         }
       }
     });
+
     console.log(`🔴 Socket disconnected: ${socket.id}`);
   });
 });
 
-// ✅ Video Streaming API
+// ✅ Video streaming API
 app.get('/api/stream', async (req, res) => {
   const videoURL = req.query.url;
-  if (!videoURL) {
-    return res.status(400).json({ error: 'URL is required' });
-  }
+  if (!videoURL) return res.status(400).json({ error: 'URL is required' });
 
   try {
     const info = await ytdl.getInfo(videoURL);
     const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
-    if (!format) {
-      return res.status(404).json({ error: 'No suitable format found' });
-    }
+    if (!format) return res.status(404).json({ error: 'No suitable format found' });
 
     res.setHeader('Content-Type', 'video/mp4');
     ytdl(videoURL, { format }).pipe(res);
@@ -265,12 +253,12 @@ app.get('/api/stream', async (req, res) => {
   }
 });
 
-// ✅ API Routes
+// ✅ API routes
 app.use('/api/services', servicesRoutes);
 app.use('/api/otp', otpRoutes);
 app.use('/api/user', userRoutes);
 
-// ✅ Static Files (Production)
+// ✅ Static production serving
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.resolve(__dirname, '../frontend/dist');
   app.use(express.static(distPath));
@@ -279,7 +267,6 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+// ✅ Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

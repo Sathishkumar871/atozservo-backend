@@ -1,22 +1,77 @@
+// models/User.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  email: { type: String, unique: true },
-  otp: String,
-  otpExpiry: Date,
+  email: { 
+    type: String, 
+    unique: true, 
+    required: true,
+    lowercase: true,
+    trim: true 
+  },
 
-  name: String,
-  gender: String,
-  phone: String, 
-  district: String, 
-  pincode: String,
-  village: String,
-  house: String,
-  area: String,
-  addressType: String,
-  profileImage: String, 
+  otp: {
+    type: String
+  },
 
-  profileCompleted: { type: Boolean, default: false },
-});
+  otpExpiry: {
+    type: Date
+  },
+
+  name: {
+    type: String,
+    trim: true
+  },
+
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other']
+  },
+
+  phone: {
+    type: String,
+    trim: true
+  },
+
+  district: {
+    type: String,
+    trim: true
+  },
+
+  pincode: {
+    type: String,
+    trim: true
+  },
+
+  village: {
+    type: String,
+    trim: true
+  },
+
+  house: {
+    type: String,
+    trim: true
+  },
+
+  area: {
+    type: String,
+    trim: true
+  },
+
+  addressType: {
+    type: String,
+    enum: ['Home', 'Work', 'Other']
+  },
+
+  profileImage: {
+    type: String, // Cloudinary URL will be stored here
+    trim: true
+  },
+
+  profileCompleted: { 
+    type: Boolean, 
+    default: false 
+  }
+}, { timestamps: true }); // createdAt, updatedAt automaticగా save అవుతాయి
 
 module.exports = mongoose.model('User', userSchema);
